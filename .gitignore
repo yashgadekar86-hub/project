@@ -1,0 +1,87 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.nox/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+env/
+ENV/
+
+# Node
+node_modules/
+.next/
+out/
+.npm/
+.pnpm-store/
+.turbo/
+.parcel-cache/
+.vite/
+.svelte-kit/
+.nuxt/
+.output/
+coverage/
+
+# Environment & secrets (CRITICAL)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets/
+
+# MetaTrader
+*.mq5.cache
+*.mql5.cache
+MT5/Tester/
+MT5/logs/
+MT5/bases/
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Docker
+docker-volumes/
+postgres-data/
+redis-data/
+
+# Data / exports
+exports/
+backtest_results/
+ml_models/*.pkl
+ml_models/*.joblib
+ml_models/*.pt
+ml_models/*.ckpt
+datasets/
+data/
+
+# Misc
+*.bak
+*.tmp
+.arena/

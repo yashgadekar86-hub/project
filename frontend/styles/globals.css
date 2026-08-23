@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 6%;
+    --foreground: 210 20% 95%;
+    --card: 222 40% 9%;
+    --card-foreground: 210 20% 95%;
+    --popover: 222 40% 8%;
+    --popover-foreground: 210 20% 95%;
+    --primary: 199 89% 52%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 20% 90%;
+    --muted: 217 33% 14%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 20%;
+    --accent-foreground: 210 20% 95%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 10%;
+    --border: 217 33% 20%;
+    --input: 217 33% 20%;
+    --ring: 199 89% 52%;
+    --radius: 0.5rem;
+  }
+
+  * { @apply border-border; }
+  html, body, #__next { height: 100%; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { @apply bg-background; }
+  ::-webkit-scrollbar-thumb { @apply bg-muted rounded; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-accent; }
+
+  .mono { font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace); }
+}
+
+@layer components {
+  .card-surface { @apply bg-card border border-border rounded-lg; }
+  .btn { @apply inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none; }
+  .btn-primary { @apply btn bg-primary text-primary-foreground hover:bg-primary/90; }
+  .btn-danger { @apply btn bg-destructive text-destructive-foreground hover:bg-destructive/90; }
+  .btn-outline { @apply btn border border-border bg-transparent hover:bg-accent; }
+  .btn-ghost { @apply btn hover:bg-accent; }
+  .input { @apply flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50; }
+  .badge { @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold; }
+  .pill-green { @apply bg-success/15 text-success border border-success/30; }
+  .pill-red { @apply bg-destructive/15 text-destructive border border-destructive/30; }
+  .pill-yellow { @apply bg-warning/15 text-warning border border-warning/30; }
+  .pill-blue { @apply bg-primary/15 text-primary border border-primary/30; }
+  .pill-muted { @apply bg-muted text-muted-foreground border border-border; }
+  .stat-label { @apply text-xs uppercase tracking-wider text-muted-foreground; }
+  .stat-value { @apply text-2xl font-semibold mono; }
+}
+
+/* Tabular numbers for prices */
+.num { font-variant-numeric: tabular-nums; font-family: var(--font-mono, ui-monospace, monospace); }
