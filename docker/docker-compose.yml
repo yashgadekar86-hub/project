@@ -1,0 +1,117 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: aifx-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aifx_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aifx_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-aifx_trading}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aifx_user} -d ${POSTGRES_DB:-aifx_trading}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: aifx-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend.Dockerfile
+    container_name: aifx-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aifx_user}:${POSTGRES_PASSWORD:-aifx_pass}@postgres:5432/${POSTGRES_DB:-aifx_trading}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
+      - ./trading_engine:/app/trading_engine
+      - ./ai_engine:/app/ai_engine
+      - ./backtesting:/app/backtesting
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 2
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend.Dockerfile
+    container_name: aifx-celery-worker
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aifx_user}:${POSTGRES_PASSWORD:-aifx_pass}@postgres:5432/${POSTGRES_DB:-aifx_trading}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    volumes:
+      - ./backend:/app/backend
+      - ./trading_engine:/app/trading_engine
+      - ./ai_engine:/app/ai_engine
+    command: celery -A core.celery_app worker --loglevel=info --concurrency=2
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend.Dockerfile
+    container_name: aifx-celery-beat
+    restart: unless-stopped
+    depends_on:
+      - redis
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app/backend
+    command: celery -A core.celery_app beat --loglevel=info
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/frontend.Dockerfile
+    container_name: aifx-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_WS_URL: ws://localhost:8000/ws
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+  redis_data:
