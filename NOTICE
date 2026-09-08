@@ -1,0 +1,18 @@
+Gold Trading Agents for MetaTrader 5
+Copyright 2026 the project contributors
+
+This product is a derivative work of TradingAgents
+(https://github.com/TauricResearch/TradingAgents), Copyright TauricResearch,
+used and modified under the Apache License, Version 2.0.
+
+Modifications made in this fork (gold/MT5 adaptation):
+- New "commodity" asset type and gold symbol classification (cli/).
+- Commodity-mode fundamentals analyst using macro/FRED drivers instead of
+  company financials (tradingagents/agents/analysts/fundamentals_analyst.py).
+- Gold-aware instrument context (tradingagents/agents/utils/agent_utils.py).
+- Gold-relevant FRED macro series (tradingagents/dataflows/fred.py).
+- New tradingagents/gold_config.py, tradingagents/brokers/ (MetaTrader 5
+  broker integration and gold order executor), gold_mt5.py runner, and
+  associated tests and documentation.
+
+The original upstream README is preserved as UPSTREAM_README.md.
