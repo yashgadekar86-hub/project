@@ -1,91 +1,144 @@
 # Gold Trading Agents for MetaTrader 5
 
-A **gold-trading fork of [TradingAgents](https://github.com/TauricResearch/TradingAgents)** (TauricResearch): the multi-agent LLM financial trading framework, re-pointed at **gold (XAUUSD)** and wired to execute on **MetaTrader 5 on Windows**.
+A fork of [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents)
+(v0.4.0, Apache-2.0 — see `NOTICE` and `UPSTREAM_README.md`) re-pointed at
+**gold (XAUUSD)** with a **MetaTrader 5** bridge for Windows, and hardened with
+a **deterministic risk engine** that has final authority over every trade
+decision.
 
-An AI "trading firm" — market, news and fundamentals analysts; bull/bear researchers; a trader; a risk-management debate; and a portfolio manager — analyses gold every run and produces a 5-tier rating (`Buy / Overweight / Hold / Underweight / Sell`). This fork then maps that decision onto a real MT5 order (or a simulated one — dry-run is the default).
+> **Research / paper-trading system.** Not investment advice. No profitability
+> is claimed — evaluate with the included backtester and out-of-sample split
+> before risking anything.
 
-> ⚠️ **Research/educational use.** Nothing here is financial advice. LLM decisions are non-deterministic and can be wrong. Start in dry-run, then on a **demo account**, and only consider live trading after you trust the behaviour. You are responsible for any order sent from your account.
+## Architecture
 
----
+```
+                    XAUUSD
+                       |
+        Market Data (MT5 primary; GC=F reference, labelled)
+                       |
+       +---------------+----------------+
+       |               |                |
+  Technical       Fundamental         News
+  (deterministic)  (FRED, provenance) (freshness-filtered)
+       |               |                |
+       +---------------+----------------+
+                       |
+          Multi-timeframe hierarchy (D1>H4>H1>M15>M5)
+                       |
+         [LLM layer: analysts -> Bull/Bear debate ->
+          Research Manager -> Trader -> Portfolio rating]
+                       |
+             DETERMINISTIC RISK ENGINE  (final authority)
+                       |
+     RR / news blackout / spread / session / volatility /
+     daily loss / positions / sizing / confidence gates
+                       |
+                Final decision: BUY / SELL / HOLD
+                       |
+              Paper / MT5 dry-run / MT5 live
+                       |
+              Audit log (JSONL) + markdown report + state
+```
+
+**The golden rule: LLMs reason; deterministic code decides.** No LLM output can
+enable live trading, override a gate, inflate position size, or manufacture a
+take-profit.
 
 ## What changed vs. upstream TradingAgents
 
 | Area | Change |
 |---|---|
-| **Asset type** | New `commodity` asset type. `XAUUSD`, `GOLD`, `GC=F`, … are detected as commodities (`cli/models.py`, `cli/utils.py`). |
-| **Fundamentals analyst** | For commodities it becomes a **macro/supply-demand strategist** (FRED real yields, dollar index, CPI, Fed funds, gold fix + macro news) instead of hunting for company financials that don't exist for a metal (`tradingagents/agents/analysts/fundamentals_analyst.py`). |
-| **Instrument context** | Agents are told the target is a commodity so they never assume earnings/balance sheets (`tradingagents/agents/utils/agent_utils.py`). |
-| **FRED macro series** | Gold drivers added: `gold_price` (LBMA PM fix), `real_yield_5y/10y/30y`, `tips_10y`, `dxy` (`tradingagents/dataflows/fred.py`). |
-| **News queries** | Default macro-news queries re-pointed at gold drivers (Fed/real yields, DXY, central-bank buying, safe-haven demand, ETF flows) (`tradingagents/gold_config.py`). |
-| **MT5 broker** | New `tradingagents/brokers/` package: connection, gold-symbol auto-detect, risk-based lot sizing, SL/TP, position flattening, **dry-run safety** (`mt5_broker.py`, `gold_executor.py`). |
-| **Runner** | New `gold_mt5.py`: runs the agent team for gold, prints/saves reports, and executes the decision on MT5. |
-
-Everything upstream (CLI, backtesting-style dated runs, memory/reflection, checkpointing, all LLM providers) still works — see [UPSTREAM_README.md](UPSTREAM_README.md).
-
----
+| Asset type | New `commodity` type; XAUUSD/GOLD/GC=F classify as commodity |
+| Fundamentals analyst | Macro drivers (real yields, DXY, CPI, Fed funds, gold fix) replace company financials |
+| `tradingagents/gold/` | **New deterministic package** (17 modules): indicators, structure (BOS/CHOCH), multi-timeframe hierarchy, sessions, news blackout, levels (SL/TP), sizing, risk engine, paper broker, backtester, state, reporting |
+| `tradingagents/brokers/` | MT5 bridge: symbol auto-detect, risk sizing from real symbol economics, SL/TP attached to every order |
+| Runner | `gold_mt5.py` rewritten around the engine: `--analysis-only`, `--dry-run`, `--paper`, `--backtest`, `--live`, `--fast`, `--no-llm`, `--min-rr`, `--min-confidence`, `--allow-short`, ... |
+| CLI | `tradingagents gold analyze --symbol XAUUSD` subcommand |
+| Tests | 240+ new tests incl. 13 explicit safety invariants (959 total) |
 
 ## Quick start (Windows + MT5)
 
-Full step-by-step instructions, including screenshots-free terminal walkthroughs and Task Scheduler automation, are in **[docs/GOLD_MT5_WINDOWS.md](docs/GOLD_MT5_WINDOWS.md)**.
-
 ```powershell
 # 1. Install Python 3.10+ and MetaTrader 5 (terminal open & logged in)
+git clone <this repo>; cd project
 
 # 2. Install the framework + MT5 bridge
-git clone <this-repo>
-cd project
 pip install -e ".[mt5]"
 
-# 3. Configure keys: copy .env.example to .env and fill in
+# 3. Configure: copy .env.example to .env
 #    - an LLM key (e.g. OPENAI_API_KEY)
 #    - FRED_API_KEY (free, for macro data)
-#    - MT5_* settings (login/server only needed if the terminal isn't logged in)
+#    - MT5_* settings (only if the terminal isn't already logged in)
 
-# 4. Analysis only (no MT5 needed at all)
+# 4. Analysis only — no MT5, no orders
 python gold_mt5.py --analysis-only
 
-# 5. Analysis + simulated MT5 order (dry-run, the default)
-python gold_mt5.py
+# 5. Paper trading (simulated fills, persistent paper account)
+python gold_mt5.py --paper
 
-# 6. Real orders — requires BOTH gates open:
-setx MT5_DRY_RUN false        # env gate (new shell afterwards)
-python gold_mt5.py --live     # CLI gate
+# 6. Deterministic backtest + walk-forward split (no LLM, no keys)
+python gold_mt5.py --backtest
+
+# 7. Analysis + MT5 read-only + PROPOSED ORDER (dry-run, the default)
+python gold_mt5.py --dry-run
+
+# 8. Real orders — requires ALL THREE gates:
+#    MT5_DRY_RUN=false  AND  --live  AND  the final confirmation
+#    (type LIVE at the prompt, or GOLD_LIVE_CONFIRM=YES when unattended)
+python gold_mt5.py --live
 ```
 
-### How a decision becomes an order
+Same flows via the installed CLI: `tradingagents gold analyze --symbol XAUUSD
+--analysis-only`.
 
-```
-Rating            ->  MT5 action (default settings)
-Buy / Overweight  ->  BUY  (opens a long, risk-sized)
-Hold              ->  nothing (keep position; --close-on-hold flattens)
-Underweight/Sell  ->  flatten any long; open a short only with --allow-short
-REVIEW/unparsable ->  never traded
-```
+### How a rating becomes an order
 
-- **Sizing**: `risk_percent` of equity divided by (SL distance × contract size); or `--lots 0.01` to fix volume.
-- **SL/TP**: from the Trader's stop level when it stated one, else `--sl-distance` (e.g. `20` = $20 on gold); TP defaults to the SL distance (1:1), or `--tp-distance`.
-- **Symbol**: auto-detected among `XAUUSD / GOLD / XAUUSD+ / GOLDm / …`; pin it with `MT5_SYMBOL`.
+| Portfolio rating | Deterministic translation |
+|---|---|
+| Buy / Overweight | BUY *candidate* — must still pass every gate |
+| Hold | NO TRADE (optionally flatten with `--close-on-hold`) |
+| Underweight / Sell | SELL candidate — only if `--allow-short`; otherwise flatten-long only |
+| REVIEW / unparseable | NO TRADE, never |
+
+Gates (any failure = HOLD, none overridable by the LLM): news blackout
+(CPI/NFP/FOMC ±30 min), session filter, spread cap, volatility band,
+higher-timeframe alignment, min RR (default 2.0 — the old 1:1 default is
+gone), risk-based sizing from **actual broker symbol economics** (tick value,
+volume step, min/max), daily loss / trade-count / loss-streak / position
+limits, duplicate-signal suppression, deterministic confidence floor (75/100).
+
+### Safety model
+
+* **Dry-run by default.** Live needs `MT5_DRY_RUN=false` **and** `--live`
+  **and** a final confirmation, then a last deterministic re-validation.
+* **Long-only by default** (`ALLOW_SHORT=false`).
+* **Every live order carries its SL** — the broker wrapper refuses to send an
+  unprotected order.
+* **HOLD is a first-class outcome.** The system is deliberately not optimized
+  to trade more.
 
 ## Tests
 
-```bash
-pip install -e ".[dev]"
-pytest tests/ -q          # 780+ tests incl. the gold/MT5 suite
+```powershell
+python -m pytest tests/ -q        # 959 passed (2 env-gated skips)
+python -m pytest tests/test_gold_risk_engine.py -q   # the 13 safety invariants
 ```
+
+No test requires MT5, network, LLM keys, or money.
 
 ## Repository map
 
-```
-gold_mt5.py                        <- gold runner (analysis -> MT5)
-tradingagents/brokers/             <- MT5 broker + gold executor (NEW)
-tradingagents/gold_config.py       <- gold overlays: news queries, symbols (NEW)
-tradingagents/agents/...           <- agent team (commodity-aware fundamentals)
-tradingagents/dataflows/...        <- yfinance/FRED/news vendors (+ gold series)
-docs/GOLD_MT5_WINDOWS.md           <- full Windows setup guide (NEW)
-tests/test_gold_mt5.py             <- gold + MT5 test suite (NEW)
-UPSTREAM_README.md                 <- original TradingAgents README
-```
+| Path | Contents |
+|---|---|
+| `gold_mt5.py` | CLI runner (thin facade over `tradingagents.gold.runner`) |
+| `tradingagents/gold/` | The deterministic engine (config, models, marketdata, indicators, structure, timeframes, fundamentals, news, news_blackout, sessions, levels, sizing, risk_engine, paper, backtest, state, report, runner) |
+| `tradingagents/brokers/` | `MT5Broker` + legacy `GoldExecutor` (rating→order direct bridge) |
+| `tradingagents/gold_config.py` | Gold overlays for the LLM research layer |
+| `docs/GOLD_MT5_WINDOWS.md` | Step-by-step Windows setup, scheduling, troubleshooting |
+| `tests/test_gold_*.py` | The gold/deterministic test suites |
 
 ## License & attribution
 
-This is a derivative work of [TradingAgents](https://github.com/TauricResearch/TradingAgents) by TauricResearch, used under the terms of its [license](LICENSE). Gold/MT5 additions in this fork inherit the same terms.
+Apache-2.0 (upstream) — derivative work; see `NOTICE` for the modification
+list and `UPSTREAM_README.md` for the original project documentation.

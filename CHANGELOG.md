@@ -6,6 +6,69 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Breaking changes within the 0.x line are called out explicitly.
 
+## [0.4.0-gold.2] — Deterministic risk engine + paper/backtesting
+
+Full audit-and-harden pass over the gold system. The headline change: a
+**deterministic risk engine** is now the final authority — LLMs reason, code
+decides. 240+ new tests, including 13 explicit safety invariants.
+
+### Added — `tradingagents/gold/` (new deterministic package)
+- `risk_engine`: the final gate. Validates rating -> candidate, long-only,
+  data availability, news blackout, session, spread, volatility, HTF
+  alignment, daily loss, trade counts, loss streak, position limits,
+  duplicate signals, structural SL/TP, min RR, sizing, and a deterministic
+  confidence floor. Outputs BUY / SELL / HOLD with a full check log.
+- `indicators`: EMA/SMA/RSI/MACD/Stochastic/ATR/Bollinger/VWMA (Wilder
+  smoothing); insufficient warm-up => None/DATA_UNAVAILABLE, never fabricated.
+- `structure`: swing detection (confirmation-safe), S/R clustering, BOS/CHOCH,
+  trend classification.
+- `timeframes`: D1>H4>H1>M15>M5 hierarchy — trend/setup/entry confirmation,
+  NOT equal-weight voting; conflicting H1 cancels, lower TFs cannot veto.
+- `levels`: structural stops with ATR buffer, honest TP from structure or ATR
+  extension; targets are never manufactured to satisfy RR (`allow_rr_fallback`
+  off by default); broker stops-level/tick validation.
+- `sizing`: volume from REAL symbol economics (tick value/size, contract
+  size); FLOOR rounding so realized risk <= configured risk; minimum volume
+  exceeding the risk budget => NO TRADE.
+- `news_blackout`: CPI/NFP/FOMC calendar (NFP first-Friday recurrence, FOMC
+  2025/26 published dates, user JSON calendar for CPI/PPI/GDP), DST-correct;
+  LLM cannot override; operator-only env override.
+- `sessions`: UTC-defined Asian/London/NY/Overlap windows, configurable IANA
+  display timezone (never hard-coded).
+- `fundamentals` / `news`: provenance (value/timestamp/source/freshness),
+  UNKNOWN instead of fabrication, hard freshness filter (stale and
+  future-dated items rejected).
+- `paper`: SL-first pessimistic fills, spread/commission/slippage, persistent
+  paper account across runs.
+- `backtest`: look-ahead-safe (candles sliced to decision time), per-trade
+  metrics + side/session/month/news-day breakdowns, 70/30 walk-forward split.
+- `state`: daily counters (trades, realized P/L, loss streak) + signal
+  idempotency, persisted; `report`: auditable markdown with data-source
+  labels and UNKNOWN marking; `marketdata`: MT5-primary / GC=F-reference
+  candles with provenance.
+
+### Changed
+- `gold_mt5.py` rewritten as a facade over `tradingagents/gold/runner.py`:
+  modes `--analysis-only` (never touches MT5), `--paper`, `--backtest`,
+  `--dry-run` (default), `--live` (needs MT5_DRY_RUN=false AND --live AND a
+  final confirmation, then a last deterministic re-validation).
+- **Default TP is no longer 1:1**: MIN_RR=2.0 with structure-based targets;
+  if no honest 2R setup exists the system HOLDs.
+- Default risk lowered to 0.5% per trade; MAX_DAILY_LOSS=2%,
+  MAX_TRADES_PER_DAY=3, MAX_CONSECUTIVE_LOSSES=4 added.
+- `MT5Broker.market_order` refuses LIVE orders without a stop-loss.
+- FRED: new `get_series_points` (point-in-time values for the engine).
+- CLI: new `tradingagents gold analyze` subcommand (the main `analyze`
+  command must now be invoked by name since the app has two commands).
+
+### Fixed
+- Paper P/L sign bug (abs() destroyed direction) — caught by the new tests.
+- Paper commission was charged at open AND close; now once per round turn.
+- Paper positions closed during replay were not removed from the state file.
+- Walk-forward split now uses a time boundary (positional indices broke on
+  frames of different lengths).
+- Double news fetch per run removed; stale/fresh collected once.
+
 ## [0.4.0-gold.1] — Gold / MetaTrader 5 fork
 
 This fork re-points TradingAgents at **gold (XAUUSD)** and adds a **MetaTrader 5**

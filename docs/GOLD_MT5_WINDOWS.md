@@ -59,9 +59,19 @@ FRED_API_KEY=your-fred-key
 #MT5_PASSWORD=your-mt5-password
 #MT5_SERVER=YourBroker-Demo
 #MT5_SYMBOL=XAUUSD        ; your broker's gold contract; auto-detected if unset
-#MT5_RISK_PERCENT=1.0     ; % of equity risked per trade
-#MT5_SL_DISTANCE=20       ; $20 stop distance on gold (optional)
 #MT5_DRY_RUN=true         ; SAFETY SWITCH - keep true until you mean it
+
+# --- deterministic risk engine (see .env.example for the full list) ---
+#RISK_PER_TRADE=0.5       ; % of equity risked per trade
+#MAX_DAILY_LOSS=2         ; stop trading for the day after -2%
+#MIN_RR=2.0               ; minimum reward:risk (below -> HOLD)
+#MIN_CONFIDENCE=75        ; deterministic confidence floor (0-100)
+#MAX_SPREAD=45            ; max spread in points (gold spreads explode on news)
+#NEWS_BLACKOUT_BEFORE=30  ; minutes before CPI/NFP/FOMC -> HOLD
+#NEWS_BLACKOUT_AFTER=30   ; minutes after
+#ALLOW_SHORT=false        ; long-only by default
+#ALLOWED_SESSIONS=London,NewYork,Overlap
+#GOLD_TIMEZONE=UTC        ; display timezone (IANA), never hard-coded
 ```
 
 Notes:
@@ -102,16 +112,38 @@ python gold_mt5.py --live
 
 Both gates must be open for a real order: `MT5_DRY_RUN=false` **and** `--live`. Either one alone stays simulated.
 
+### 4.3b Paper trading & backtesting (no MT5 needed)
+```powershell
+# simulated fills with SL-first pessimism, persistent paper account
+python gold_mt5.py --paper
+
+# deterministic backtest + 70/30 walk-forward split (no LLM keys needed)
+python gold_mt5.py --backtest
+```
+Paper positions live in `results_dir/gold_state.json`; every run replays fresh
+candles against open positions (a candle touching both SL and TP closes at the
+SL — the pessimistic assumption, documented).
+
+The backtester runs the DETERMINISTIC engine only (no LLM): honest,
+reproducible statistics without API cost. Use it before believing anything.
+In-sample and out-of-sample results are reported separately so you cannot
+optimize and evaluate on the same data.
+
 ### 4.4 Useful flags
 
 ```powershell
-python gold_mt5.py --lots 0.01                  # fixed 0.01 lot, ignore risk sizing
+python gold_mt5.py --lots 0.01                  # fixed volume override (gates still apply)
 python gold_mt5.py --risk-percent 0.5           # risk half a percent per trade
-python gold_mt5.py --sl-distance 25 --tp-distance 50   # $25 stop, $50 target
+python gold_mt5.py --min-rr 2.5                 # demand better reward:risk
+python gold_mt5.py --min-confidence 80          # raise the confidence floor
 python gold_mt5.py --allow-short                # bearish signals open shorts (default: flatten only)
-python gold_mt5.py --close-on-hold              # flatten the position on a Hold rating
-python gold_mt5.py --date 2026-08-28 --analysis-only   # re-run a past date (backtest)
-python gold_mt5.py --with-sentiment             # also run the social-sentiment analyst
+python gold_mt5.py --close-on-hold              # flatten the position on a HOLD decision
+python gold_mt5.py --fast                       # cheaper/faster LLM mode (gates unchanged)
+python gold_mt5.py --no-llm                     # deterministic candidate only, zero LLM calls
+python gold_mt5.py --timeframe H4               # structure/SL/TP working timeframe
+python gold_mt5.py --date 2026-08-28 --analysis-only   # agents on a past (point-in-time) date
+python gold_mt5.py --reflect 2.0                # feed a realized +2R result into agent memory
+python gold_mt5.py --debug                      # verbose traces
 python gold_mt5.py --quiet                      # less logging
 ```
 
@@ -134,7 +166,9 @@ Gold trades ~23h/day Sunday evening to Friday (server time), so weekday mornings
 | `mt5.initialize() failed` | MT5 terminal not installed at the default location — set `MT5_TERMINAL_PATH` to the full `terminal64.exe` path. Only one process can own a terminal data folder at a time: close other Python scripts using MT5. |
 | `mt5.login() failed` | Wrong login/password/server, or the broker requires the terminal login (leave the three vars unset and log in via the terminal UI instead). |
 | `None of the gold symbols ... exist` | Open Market Watch in MT5, find your gold contract's exact name, set `MT5_SYMBOL`. |
-| Order retcode `10019` (no money) | Volume too big for the account — lower `MT5_RISK_PERCENT` or set `MT5_FIXED_LOTS=0.01`. |
+| Order retcode `10019` (no money) | Volume too big for the account — lower `RISK_PER_TRADE` (engine sizing) or `MT5_RISK_PERCENT` (legacy executor). |
+| `REFUSED: live order without a stop-loss` | Working as intended — unprotected orders are never sent. This means the plan failed level validation mid-flight. |
+| Decision is always HOLD | Read `results_dir/gold_reports/*.md`: every veto names its gate (blackout, spread, session, RR, confidence...). HOLD is the intended outcome when conditions are bad. |
 | Order retcode `10027` (autotrading disabled) | Enable *Allow algorithmic trading* (Tools → Options → Expert Advisors) and check the "Algo Trading" toolbar button is green. |
 | Order retcode `10030` (unsupported filling) | Rare; the bridge auto-selects IOC/FOK from the symbol's filling flags. Report the symbol's filling mode if you see this. |
 | No macro numbers in the fundamentals report | Set `FRED_API_KEY`. |
@@ -142,7 +176,8 @@ Gold trades ~23h/day Sunday evening to Friday (server time), so weekday mornings
 
 ## 7. Risk disclaimer
 
-- LLM output is **non-deterministic**: the same date can produce different decisions on different runs.
+- LLM output is **non-deterministic**: the same date can produce different reasoning on different runs — but the deterministic gates (data, levels, sizing, risk limits, blackout) are fully reproducible, and the final BUY/SELL/HOLD can only pass them, never bypass them.
+- Live trading requires THREE gates: `MT5_DRY_RUN=false` **and** `--live` **and** the final confirmation (`LIVE` at the prompt, or `GOLD_LIVE_CONFIRM=YES` when scheduled). Never set all three casually.
 - News and macro data are point-in-time best-effort; a run with today's date uses live data that can lag.
 - Gold CFD/futures leverage can lose more than the margin posted. Use stops (this executor always attaches one), size small, and never trade money you can't afford to lose.
 - This software is provided "as is" under Apache 2.0, without warranty of any kind. It is not financial advice.

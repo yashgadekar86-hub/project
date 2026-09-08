@@ -10,9 +10,18 @@ Modifications made in this fork (gold/MT5 adaptation):
 - Commodity-mode fundamentals analyst using macro/FRED drivers instead of
   company financials (tradingagents/agents/analysts/fundamentals_analyst.py).
 - Gold-aware instrument context (tradingagents/agents/utils/agent_utils.py).
-- Gold-relevant FRED macro series (tradingagents/dataflows/fred.py).
+- Gold-relevant FRED macro series and a point-in-time series accessor
+  (tradingagents/dataflows/fred.py).
 - New tradingagents/gold_config.py, tradingagents/brokers/ (MetaTrader 5
   broker integration and gold order executor), gold_mt5.py runner, and
   associated tests and documentation.
+- New deterministic gold system (tradingagents/gold/): indicators, market
+  structure, multi-timeframe hierarchy, sessions, news blackout, fundamentals
+  and news collection with provenance, SL/TP level construction, risk-based
+  position sizing, the deterministic risk engine (final trade authority),
+  paper trading, backtesting with walk-forward split, persistent safety
+  state, and auditable reporting.
+- `tradingagents gold analyze` CLI subcommand and runner modes
+  (analysis-only / paper / backtest / dry-run / live).
 
 The original upstream README is preserved as UPSTREAM_README.md.

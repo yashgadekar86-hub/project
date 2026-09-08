@@ -423,6 +423,14 @@ class MT5Broker:
         else:
             raise MT5OrderError(f"Unknown action {action!r}.")
 
+        # Phase 24 (order protection): a LIVE market order must never be sent
+        # without a stop-loss. Dry-run previews may omit it for inspection.
+        if not self.config.dry_run and sl is None:
+            raise MT5OrderError(
+                "REFUSED: live order without a stop-loss. Compute a valid SL "
+                "before submitting; unprotected orders are not sent."
+            )
+
         if volume is None:
             # Size from the SL distance (fall back to config / a sane default).
             stop_distance = self.config.stop_loss_distance or (self.config.take_profit_distance or 0.0)

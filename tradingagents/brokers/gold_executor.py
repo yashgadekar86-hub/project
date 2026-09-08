@@ -88,6 +88,27 @@ def extract_price_levels(trader_plan: str) -> tuple[float | None, float | None]:
     return entry, stop
 
 
+def extract_take_profits(trader_plan: str) -> list[float]:
+    """Pull take-profit targets out of the Trader's plan, in order.
+
+    Matches ``**Take Profit**: 2450`` and numbered variants (TP1..TP3).
+    Returns ``[]`` when the plan states none — the deterministic level
+    builder then derives targets from structure/ATR instead.
+    """
+    if not trader_plan:
+        return []
+    pattern = re.compile(
+        r"Take Profit(?:\s*\d)?\*{0,2}\s*[:\-]\s*\**\s*([\d,]+(?:\.\d+)?)",
+        re.I,
+    )
+    out: list[float] = []
+    for m in pattern.finditer(trader_plan):
+        value = _to_float(m.group(1))
+        if value is not None:
+            out.append(value)
+    return out
+
+
 def _to_float(text: str) -> float | None:
     try:
         return float(text.replace(",", ""))

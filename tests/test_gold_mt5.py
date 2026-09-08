@@ -334,8 +334,26 @@ def test_rejected_order_not_ok():
     broker = _broker_with_stubs(dry_run=False)
     trade_result = SimpleNamespace(retcode=10019, comment="no money", _asdict=lambda: {})
     broker._mt5.orders_send.return_value = trade_result
-    res = broker.market_order("BUY", volume=5.0)
+    res = broker.market_order("BUY", volume=5.0, sl=2380.0)
     assert res.ok is False
+
+
+def test_live_order_without_sl_is_refused():
+    """Phase 24: an unprotected live order must never reach orders_send."""
+    import pytest as _pytest
+
+    from tradingagents.brokers.mt5_broker import MT5OrderError
+
+    broker = _broker_with_stubs(dry_run=False)
+    with _pytest.raises(MT5OrderError, match="without a stop-loss"):
+        broker.market_order("BUY", volume=0.1)
+    broker._mt5.orders_send.assert_not_called()
+
+
+def test_dry_run_order_without_sl_is_allowed_for_inspection():
+    broker = _broker_with_stubs(dry_run=True)
+    res = broker.market_order("BUY", volume=0.1)  # no SL
+    assert res.dry_run and res.comment.startswith("DRY-RUN")
 
 
 def test_order_result_ok_semantics():

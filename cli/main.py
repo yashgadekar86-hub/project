@@ -1334,5 +1334,101 @@ def analyze(
         raise typer.Exit(code=1) from None
 
 
+# ---------------------------------------------------------------------------
+# Gold / XAUUSD deterministic subcommands
+# ---------------------------------------------------------------------------
+
+gold_app = typer.Typer(
+    name="gold",
+    help="Gold (XAUUSD) analysis, paper trading and MT5 execution — "
+         "gated by the deterministic risk engine.",
+)
+
+
+@gold_app.command("analyze")
+def gold_analyze(
+    symbol: str = typer.Option("XAUUSD", "--symbol", help="Gold symbol."),
+    mt5_symbol: str | None = typer.Option(None, "--mt5-symbol",
+                                          help="Broker-side symbol name."),
+    date: str | None = typer.Option(None, "--date", help="Analysis date YYYY-MM-DD."),
+    analysis_only: bool = typer.Option(
+        False, "--analysis-only",
+        help="Analyse + report; NEVER connects to MT5."),
+    paper: bool = typer.Option(False, "--paper", help="Paper trading mode."),
+    backtest: bool = typer.Option(False, "--backtest",
+                                  help="Deterministic backtest (no LLM)."),
+    live: bool = typer.Option(
+        False, "--live",
+        help="Allow REAL orders. Also requires MT5_DRY_RUN=false and a final "
+             "confirmation."),
+    allow_short: bool = typer.Option(False, "--allow-short",
+                                     help="Permit shorts (default long-only)."),
+    close_on_hold: bool = typer.Option(False, "--close-on-hold",
+                                       help="Flatten on a HOLD decision."),
+    risk_percent: float | None = typer.Option(None, "--risk-percent"),
+    min_rr: float | None = typer.Option(None, "--min-rr"),
+    min_confidence: float | None = typer.Option(None, "--min-confidence"),
+    account_balance: float | None = typer.Option(
+        None, "--account-balance", help="Equity when no broker is connected."),
+    timeframe: str | None = typer.Option(None, "--timeframe"),
+    fast: bool = typer.Option(False, "--fast", help="Lightweight LLM mode."),
+    no_llm: bool = typer.Option(
+        False, "--no-llm",
+        help="Deterministic-only candidate (no LLM calls)."),
+    reflect: float | None = typer.Option(
+        None, "--reflect", help="Feed a realized R result into agent memory."),
+    debug: bool = typer.Option(False, "--debug"),
+    quiet: bool = typer.Option(False, "--quiet"),
+) -> None:
+    """Analyse gold and produce a gated BUY/SELL/HOLD decision.
+
+    Default mode is dry-run: MT5 is read for account/price data and the
+    proposed order is displayed, but nothing is submitted.
+    """
+    from tradingagents.gold.runner import (
+        RunOptions,
+        run_backtest_flow,
+        run_gold,
+        run_paper,
+    )
+
+    opts = RunOptions(
+        symbol=symbol, mt5_symbol=mt5_symbol, date=date,
+        analysis_only=analysis_only, paper=paper, backtest=backtest,
+        live=live, allow_short=allow_short, close_on_hold=close_on_hold,
+        risk_percent=risk_percent, min_rr=min_rr,
+        min_confidence=min_confidence, account_balance=account_balance,
+        timeframe=timeframe, fast=fast, no_llm=no_llm, debug=debug,
+        quiet=quiet, reflect=reflect,
+    )
+    try:
+        if backtest:
+            result = run_backtest_flow(opts)
+        elif paper:
+            result = run_paper(opts)
+        else:
+            result = run_gold(opts)
+    except Exception as exc:  # noqa: BLE001 - never fail open
+        console.print(f"[red]Run failed (treated as NO TRADE / HOLD): {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    if result.decision is not None:
+        console.print(Panel(result.decision.summary(),
+                            title="Deterministic decision"))
+        if result.decision.confidence is not None:
+            console.print(result.decision.confidence.display())
+    if result.rating:
+        console.print(f"Portfolio rating: [bold]{result.rating}[/bold]")
+    if result.report_path:
+        console.print(f"Report: {result.report_path}")
+    for note in result.notes:
+        console.print(f"[yellow]note:[/yellow] {note}")
+    if not result.ok:
+        raise typer.Exit(code=2)
+
+
+app.add_typer(gold_app)
+
+
 if __name__ == "__main__":
     app()

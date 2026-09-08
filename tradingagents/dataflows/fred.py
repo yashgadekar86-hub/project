@@ -161,6 +161,50 @@ def _request(path: str, params: dict) -> dict:
     return response.json()
 
 
+def get_series_points(
+    indicator: str,
+    curr_date: str,
+    look_back_days: int | None = None,
+) -> list[tuple[str, float]]:
+    """Fetch ``(date, value)`` observations for a series, point-in-time safe.
+
+    Same vintage pinning as :func:`get_macro_data` (realtime bounds set to
+    ``curr_date``), so a historical run sees only values published by that
+    date. Returns ``[]`` when the series is unknown/unavailable — callers
+    must treat that as UNKNOWN, never fabricate.
+    """
+    if look_back_days is None:
+        look_back_days = DEFAULT_LOOKBACK_DAYS
+    end_dt = datetime.strptime(curr_date, "%Y-%m-%d")
+    start_date = (end_dt - timedelta(days=look_back_days)).strftime("%Y-%m-%d")
+    pit = min(curr_date, _fred_today())
+    realtime = {"realtime_start": pit, "realtime_end": pit}
+    try:
+        series_id = _resolve_series_id(indicator)
+    except ValueError:
+        return []
+    observations = _request(
+        "series/observations",
+        {
+            "series_id": series_id,
+            "observation_start": start_date,
+            "observation_end": curr_date,
+            "sort_order": "asc",
+            **realtime,
+        },
+    ).get("observations", [])
+    out: list[tuple[str, float]] = []
+    for o in observations:
+        raw = o.get("value")
+        if raw in (".", None, ""):
+            continue
+        try:
+            out.append((o["date"], float(raw)))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def get_macro_data(
     indicator: str,
     curr_date: str,
@@ -237,7 +281,6 @@ def get_macro_data(
         for o in observations
         if o.get("value") not in (".", None, "")
     ]
-
     header = (
         f"## FRED: {title} ({series_id})\n"
         f"- Units: {units}\n"
